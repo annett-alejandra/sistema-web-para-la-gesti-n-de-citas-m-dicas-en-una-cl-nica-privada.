@@ -1,121 +1,70 @@
-# Arquitectura MVC con PHP y Blade
+# Arquitectura MVC con Laravel y Blade
 
-Clínica Vida Salud utiliza Laravel 13, PHP 8.3, PostgreSQL 16 y vistas PHP Blade (`.blade.php`) con HTML y CSS. JavaScript se reserva para mejoras progresivas. La estructura sigue la organización académica por paquetes de TELCOM.
+Clínica Vida Salud concentra la aplicación en `backend/`. Las rutas del grupo `web` reciben las peticiones, aplican sesión, CSRF y autorización, y envían los formularios a los controladores del paquete correspondiente. Los controladores validan con Laravel, invocan los servicios de negocio y devuelven HTML o redirecciones con mensajes temporales. Los servicios usan los modelos Eloquent y las restricciones de PostgreSQL 16.
 
-## Revisión y alcance
+| Capa | Ubicación |
+| --- | --- |
+| Controladores | `app/Http/Controllers/Paquetes/` |
+| Servicios | `app/Services/Paquetes/` |
+| Diez modelos Eloquent | `app/Models/` |
+| Vistas por caso de uso | `resources/views/Paquetes/` |
+| Layout y componentes | `resources/views/layouts/` y `resources/views/components/` |
+| Rutas con sesión | `routes/web.php` |
+| CSS y JavaScript estáticos | `public/css/` y `public/js/` |
 
-Se revisó `frontend/`: contenía el contador inicial, enlaces, estilos y recursos de la plantilla React/Vite, además de directorios vacíos con `.gitkeep`. No había lógica de la clínica, peticiones al backend, formularios de negocio ni casos de uso implementados. Se retiró esa carpeta y se conservaron exactamente los nombres de sus siete paquetes y sus 19 carpetas de vistas dentro de Laravel.
+## Inventario de los 19 casos de uso
 
-Los modelos Eloquent, controladores y servicios existentes permanecen intactos. La reorganización no añade tablas, migraciones, seeders ni lógica de los casos de uso. Las carpetas de casos de uso contienen únicamente `.gitkeep`; las pantallas se crearán cuando se implemente cada caso.
+La rama de partida tenía diez pantallas React. `App.jsx` mantenía el módulo activo, la cuenta y el turno seleccionado en el cliente. Los hooks de los paquetes llamaban a `apiClient.js` para consumir las rutas JSON de Laravel. Blade ya aportaba la portada y dos vistas parciales para CU03 y CU11. La integración mantiene las diez interfaces y sus flujos de datos con las salvedades siguientes.
 
-## Estructura
+| Paquete | CU | Pantalla de origen y resultado en Blade |
+| --- | --- | --- |
+| P1 Seguridad y administración | CU01 Iniciar sesión | `UI_Autenticacion` → `/iniciar-sesion`. Vista preparada. Falta autenticar con el guard web y crear la sesión. |
+| P1 | CU02 Cerrar sesión | `UI_MenuPrincipal` → `/panel` y navegación compartida. El POST de salida invalida una sesión real y reutiliza la auditoría existente. |
+| P1 | CU03 Gestionar usuarios y roles | `UI_Usuario` y vista Blade previa → `/usuarios`. Tabla, creación, modificación, asignación de rol y cambio de estado. |
+| P1 | CU04 Gestionar especialidades médicas | `UI_Especialidad` → `/especialidades`. Catálogo con descripción, formulario y cambio de estado. |
+| P2 Personal médico | CU05 Gestionar médicos | `UI_Medico` → `/medicos`. Listado, contacto, matrícula, selección de especialidades y cambio de estado. |
+| P2 | CU06 Gestionar horarios de atención | `UI_HorarioAtencion` → `/horarios`. Filtro, alta y eliminación de turnos para recepción y administración. Los médicos consultan su horario. |
+| P3 Gestión de pacientes | CU07 Gestionar pacientes | `UI_Paciente` → `/pacientes`. Directorio, búsqueda por nombre o CI, alta, edición y cambio de estado. |
+| P3 | CU08 Gestionar perfil de paciente | Carpeta reservada. Pendiente de implementación. |
+| P3 | CU09 Registrar cuenta de paciente | `UI_RegistroPaciente` → `/registro-paciente`. Formulario y alta de cuenta con ficha nueva. Vincular una ficha preexistente requiere verificar la identidad. El acceso posterior depende de CU01. |
+| P4 Gestión de citas | CU10 Consultar disponibilidad médica | `UI_Disponibilidad` → `/disponibilidad`. Filtra por especialidad, médico y fecha. Los roles que pueden reservar abren CU11 con el turno preseleccionado. |
+| P4 | CU11 Programar cita médica | `UI_CitaMedica` y vista Blade previa → `/citas` y detalle por código. Formulario, listado por alcance y confirmación con UUID. |
+| P4 | CU12 Reprogramar cita médica | Carpeta reservada. Pendiente de implementación. |
+| P4 | CU13 Cancelar cita médica | Carpeta reservada. Pendiente de implementación. |
+| P5 Control de atención | CU14 Registrar confirmación, asistencia o inasistencia | Carpeta reservada. Pendiente de implementación. |
+| P5 | CU15 Registrar cita atendida | Carpeta reservada. Pendiente de implementación. |
+| P6 Consultas e historiales | CU16 Consultar agenda médica | Carpeta reservada. El alcance por médico de CU11 protege el listado existente. Falta el flujo de agenda. |
+| P6 | CU17 Consultar historial de citas del paciente | Carpeta reservada. Pendiente de implementación. |
+| P6 | CU18 Consultar mis citas | Carpeta reservada. El alcance por paciente de CU11 protege el listado existente. Falta el flujo independiente de CU18. |
+| P7 Reportes y estadísticas | CU19 Generar reportes administrativos | Carpeta reservada. Pendiente de implementación. |
 
-```text
-clinica-vida-salud/
-├── README.md
-└── backend/
-    ├── app/
-    │   ├── Http/Controllers/
-    │   │   ├── Controller.php
-    │   │   └── Paquetes/                 # Siete paquetes y 19 casos existentes
-    │   ├── Models/
-    │   │   ├── User.php                  # Único modelo de autenticación
-    │   │   └── Paquetes/                 # Modelos Eloquent existentes
-    │   └── Services/Paquetes/            # Siete paquetes existentes
-    ├── routes/web.php
-    ├── public/
-    │   ├── index.php
-    │   ├── css/app.css                   # Estilos utilizados por Blade
-    │   └── js/app.js                     # Mejoras progresivas
-    ├── resources/
-    │   ├── css/                          # Entradas iniciales opcionales de Vite
-    │   ├── js/                           # Entradas iniciales opcionales de Vite
-    │   └── views/
-    │       ├── welcome.blade.php
-    │       ├── layouts/app.blade.php
-    │       ├── components/
-    │       │   ├── alerts.blade.php
-    │       │   └── form.blade.php
-    │       └── Paquetes/
-    │           ├── P1_SeguridadAdministracion/
-    │           │   ├── CU01_IniciarSesion/
-    │           │   ├── CU02_CerrarSesion/
-    │           │   ├── CU03_GestionarUsuariosRoles/
-    │           │   └── CU04_GestionarEspecialidadesMedicas/
-    │           ├── P2_PersonalMedico/
-    │           │   ├── CU05_GestionarMedicos/
-    │           │   └── CU06_GestionarHorariosAtencion/
-    │           ├── P3_GestionPacientes/
-    │           │   ├── CU07_GestionarPacientes/
-    │           │   ├── CU08_GestionarPerfilPaciente/
-    │           │   └── CU09_RegistrarCuentaPaciente/
-    │           ├── P4_GestionCitas/
-    │           │   ├── CU10_ConsultarDisponibilidadMedica/
-    │           │   ├── CU11_ProgramarCitaMedica/
-    │           │   ├── CU12_ReprogramarCitaMedica/
-    │           │   └── CU13_CancelarCitaMedica/
-    │           ├── P5_ControlAtencion/
-    │           │   ├── CU14_RegistrarConfirmacionAsistenciaInasistencia/
-    │           │   └── CU15_RegistrarCitaAtendida/
-    │           ├── P6_ConsultasHistoriales/
-    │           │   ├── CU16_ConsultarAgendaMedica/
-    │           │   ├── CU17_ConsultarHistorialCitasPaciente/
-    │           │   └── CU18_ConsultarMisCitas/
-    │           └── P7_ReportesEstadisticas/
-    │               └── CU19_GenerarReportesAdministrativos/
-    └── tests/
-        ├── Feature/BladeArchitectureTest.php
-        └── Unit/                         # Pruebas existentes
-```
+## Sesión y autorización
 
-Las carpetas de vistas se corresponden con las carpetas existentes de controladores por paquete y caso de uso. Los modelos se comparten entre los paquetes que los necesitan, sin duplicar entidades. Los servicios conservan su ubicación y asumirán las operaciones de negocio al implementar los casos de uso.
+- La portada y las pantallas de acceso y registro se sirven sin sesión. El POST de registro usa CSRF y límite de cinco solicitudes por minuto por IP para visitantes.
+- `auth` y las capacidades definidas en `AppServiceProvider` protegen las rutas privadas. Las vistas usan las mismas capacidades para mostrar enlaces y formularios. El rol proviene de la relación Eloquent del usuario autenticado y se verifica el estado activo de la cuenta.
+- Administración accede a CU03 y CU04. Administración y recepción gestionan CU05, CU06 y CU07, pueden reservar para pacientes y consultar citas. Un médico con ficha vinculada consulta su horario y sus citas. Un paciente con ficha vinculada reserva y consulta sus propias citas.
+- El operador de auditoría se obtiene de la sesión. El servidor fija la ficha para las reservas del paciente y limita el acceso por UUID al ámbito del usuario. El UUID no se usa como credencial.
+- CU02 utiliza el guard web, invalida la sesión y rota el token CSRF. Las rutas `/api/*` del cliente anterior fueron retiradas. Se conserva el código de autenticación legado de CU01 sin exponer sus acciones.
+- La portada conserva las fotografías institucionales referenciadas por URL y sus cuatro capítulos. El carrusel, las pestañas, el filtro, la galería y el control de movimiento usan Blade y JavaScript convencional. Los recursos de plantilla del cliente React no se referenciaban desde las vistas nuevas.
 
-## Rutas y sesiones
+## Cambios necesarios en la integración
 
-`bootstrap/app.php` ya carga `routes/web.php`. Laravel le aplica el grupo `web`, que inicia sesiones, comparte errores de validación con las vistas y mantiene su protección CSRF. No se añaden excepciones a esa protección ni se duplica el grupo de middleware.
+- CU09 crea la ficha y la cuenta en la transacción existente. Exige el rol `Paciente` por nombre y devuelve un mensaje genérico ante conflictos de CI o correo. Se suspendió la asociación por CI a fichas existentes y se retiró el token sin respaldo que se devolvía después del alta. Laravel valida la confirmación de contraseña y el consentimiento que el formulario anterior pedía en el navegador.
+- El formulario de cita toma los datos preseleccionados del enlace de CU10 y Laravel vuelve a validarlos al guardar. Se conservan los límites del backend. CU06 admite turnos de hasta 240 minutos por cupo y CU11 reserva hasta 180. CU10 indica esta diferencia en los cupos que exceden el límite de reserva.
+- Los formularios usan `x-form` para CSRF y verbos PUT, PATCH y DELETE. El servidor valida las horas como `HH:mm` y las ediciones envían formularios completos. Los servicios conservan las reglas de unicidad, turnos, reservas y estados. Las excepciones de negocio regresan al formulario con datos y mensajes. Las contraseñas se excluyen de los valores anteriores.
 
-La ruta inicial `GET /`, nombrada `inicio`, muestra únicamente una página base Blade. No hay rutas de acceso, reservas o mantenimiento implementadas. Las futuras rutas enviarán las solicitudes a los controladores del paquete correspondiente; estos utilizarán los servicios y modelos existentes y devolverán vistas `Paquetes.<paquete>.<caso>.<vista>`.
+## Antes de implementar CU01
 
-La configuración existente usa sesiones en archivos por defecto (`storage/framework/sessions`). Se conserva `.env`. Los mensajes temporales se muestran mediante `components/alerts.blade.php`, que escapa su contenido y muestra los errores de validación.
+1. Conectar la verificación del hash y de la cuenta activa con el guard `web`. Regenerar el ID de sesión al entrar y redirigir al panel o al destino solicitado. Reutilizar la bitácora con la identidad real.
+2. Retirar del controlador y servicio legado la emisión de tokens sin almacenamiento ni verificación, el cierre que aceptaba un ID del cliente y las respuestas que concatenaban mensajes de excepciones.
+3. Aplicar límite de intentos y una respuesta uniforme para credenciales inválidas o cuentas inactivas. Definir cómo resolver colisiones entre nombres de usuario y correos. Verificar la configuración de cookies de sesión en el despliegue.
+4. Acordar cómo se verifica la identidad y el contacto antes de activar accesos o vincular una cuenta a una ficha anterior. Revisar la asignación de roles y vínculos de paciente/médico para las cuentas existentes.
+5. Probar inicio y cierre de sesión, roles, propiedad de citas, invalidación de sesión y cuentas desactivadas con datos de prueba de PostgreSQL. Si se despliega fuera del entorno local, confirmar que el modo de depuración esté desactivado.
 
-## Layout y formularios
+## Archivos de esta integración
 
-Las futuras vistas extenderán `layouts.app` y completarán las secciones `title` y `content`. El layout proporciona HTML en español, recursos públicos, un enlace accesible al contenido, mensajes y espacios `@stack('styles')` y `@stack('scripts')` para recursos específicos.
-
-El componente anónimo `<x-form>` recibe una URL en `action` y un método en `method`. Genera `@csrf` para POST, PUT, PATCH y DELETE; los tres últimos utilizan POST y el campo `@method` de Laravel. Los formularios GET no incluyen tokens en la URL. Solo se admiten esos cinco métodos. El componente no crea rutas, no procesa datos y no implementa casos de uso.
-
-Para formularios escritos directamente en una vista, incluir `@csrf` dentro del formulario cuando cambie datos y `@method` cuando corresponda. Mostrar los valores mediante `{{ }}` para conservar el escape HTML. La validación y autorización se añadirán al implementar cada caso de uso.
-
-## CSS y JavaScript
-
-Los archivos usados por el layout son `public/css/app.css` y `public/js/app.js`, referenciados mediante `asset()`. Esta base funciona con PHP sin instalar Node.js ni compilar assets. JavaScript permite cerrar mensajes y no controla operaciones de negocio.
-
-Se conservan los archivos iniciales de herramientas del backend (`package.json`, `vite.config.js`, `resources/css/` y `resources/js/`). Vite puede compilar CSS y JavaScript para Blade si el equipo decide utilizarlo después; el layout actual no usa `@vite` ni depende de un manifiesto generado. No hay una aplicación cliente separada.
-
-## Ejecución y comprobaciones
-
-Desde `backend/`, con las dependencias PHP y el entorno local ya configurados:
-
-```bash
-php artisan serve
-```
-
-Abrir la dirección indicada por Laravel. La preparación de vistas no requiere ejecutar migraciones, seeders ni comandos de reinicio de la base de datos.
-
-Las pruebas verifican el renderizado de Blade, sesiones en memoria, escape de mensajes, CSRF de formularios, middleware web y correspondencia entre las siete carpetas de paquetes y sus 19 casos de uso. Las rutas que emplean para probar formularios existen solo dentro del proceso de pruebas; no se añaden a las rutas de la aplicación.
-
-```bash
-php vendor/phpunit/phpunit/phpunit --do-not-cache-result
-```
-
-Las comprobaciones no utilizan datos reales ni ejecutan migraciones. Se bloquean las consultas SQL en las nuevas pruebas de arquitectura.
-
-## Archivos de la reorganización
-
-- Eliminado `frontend/` tras revisar su plantilla y sus marcadores vacíos.
-- Modificados `README.md` del repositorio y `backend/README.md`.
-- Modificados `backend/routes/web.php` y `backend/resources/views/welcome.blade.php`.
-- Creados `backend/resources/views/layouts/app.blade.php`, `components/alerts.blade.php` y `components/form.blade.php`.
-- Creados 19 archivos `.gitkeep` dentro de `backend/resources/views/Paquetes/`, uno por caso de uso.
-- Creados `backend/public/css/app.css` y `backend/public/js/app.js`.
-- Creados `backend/docs/arquitectura-mvc-blade.md` y `backend/tests/Feature/BladeArchitectureTest.php`.
+- Las vistas nuevas están en CU01, CU02, CU04, CU05, CU06, CU07, CU09 y CU10. CU11 añade la vista de detalle. Se integraron las vistas existentes de CU03, CU11 y la portada.
+- Los componentes nuevos son `clinica-heading`, `clinica-input`, `clinica-select`, `clinica-row-actions` y `portal-nav`. Se actualizaron `layouts/app.blade.php`, `editorial-slider`, `gallery-modal`, `public/css/app.css` y `public/js/app.js`. Los recursos `portada.css` y `portada.js` contienen los estilos y controles de la portada.
+- Se actualizaron los controladores de CU02, CU03, CU04, CU05, CU06, CU07, CU09, CU10 y CU11, además del controlador base y el servicio de CU09. El registro de rutas, las capacidades y la redirección de invitados autenticados están en `routes/`, `app/Providers/AppServiceProvider.php` y `bootstrap/app.php`.
+- Se retiraron `frontend/`, los manifiestos y configuraciones de Vite y Tailwind del backend y sus entradas en `resources/css/` y `resources/js/`. `composer.json` usa comandos de PHP para ejecutar el servidor.
+- `tests/Feature/PortalClinicoTest.php` comprueba los accesos, formularios, alcance de citas y salida. `tests/TestCase.php` genera una clave exclusiva del proceso de prueba.

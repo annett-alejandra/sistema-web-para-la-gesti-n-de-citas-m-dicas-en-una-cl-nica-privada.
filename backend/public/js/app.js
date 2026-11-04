@@ -1,110 +1,34 @@
-/**
- * CLÍNICA VIDA SALUD — MOTOR DE INTERACCIÓN LIGERO Y OPTIMIZADO (60FPS)
- * Rendimiento nativo sin secuestro de scroll (Scroll Hijacking)
- */
-
-document.addEventListener('DOMContentLoaded', () => {
-    // 1. Manejo del Menú Móvil
-    const menuToggleBtn = document.getElementById('mobile-menu-btn');
-    const mobileMenu = document.getElementById('mobile-menu');
-
-    if (menuToggleBtn && mobileMenu) {
-        menuToggleBtn.addEventListener('click', () => {
-            const isExpanded = menuToggleBtn.getAttribute('aria-expanded') === 'true';
-            menuToggleBtn.setAttribute('aria-expanded', !isExpanded);
-            mobileMenu.classList.toggle('hidden');
-        });
-
-        // Cerrar menú al hacer clic en un enlace
-        mobileMenu.querySelectorAll('a').forEach(link => {
-            link.addEventListener('click', () => {
-                menuToggleBtn.setAttribute('aria-expanded', 'false');
-                mobileMenu.classList.add('hidden');
-            });
-        });
-    }
-
-    // 2. Control de Preferencias de Movimiento y Accesibilidad
-    const motionToggleBtn = document.getElementById('toggle-motion-btn');
+const motionToggle = document.querySelector('#toggle-motion-btn');
+if (motionToggle) {
     const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-    let isReducedMotion = localStorage.getItem('clinica_reduced_motion') === 'true' || prefersReducedMotion;
+    let reduced = prefersReducedMotion;
 
-    function applyMotionState(reduced) {
-        if (reduced) {
-            document.body.classList.add('reduced-motion');
-            if (motionToggleBtn) {
-                motionToggleBtn.innerHTML = '<span>▶</span> Activar Animaciones';
-                motionToggleBtn.setAttribute('aria-pressed', 'true');
-            }
-        } else {
-            document.body.classList.remove('reduced-motion');
-            if (motionToggleBtn) {
-                motionToggleBtn.innerHTML = '<span>Ⅱ</span> Pausar Animaciones';
-                motionToggleBtn.setAttribute('aria-pressed', 'false');
-            }
+    try {
+        reduced = JSON.parse(localStorage.getItem('clinica_reduced_motion')) ?? prefersReducedMotion;
+    } catch {
+        // La preferencia del sistema también funciona cuando el almacenamiento está bloqueado.
+    }
+
+    function applyMotionPreference() {
+        document.documentElement.classList.toggle('reduced-motion', reduced);
+        motionToggle.setAttribute('aria-pressed', String(reduced));
+        motionToggle.textContent = reduced ? 'Activar animaciones' : 'Pausar animaciones';
+    }
+
+    motionToggle.hidden = false;
+    applyMotionPreference();
+    motionToggle.addEventListener('click', () => {
+        reduced = !reduced;
+        applyMotionPreference();
+
+        try {
+            localStorage.setItem('clinica_reduced_motion', JSON.stringify(reduced));
+        } catch {
+            // La preferencia se aplica en la página abierta.
         }
-        localStorage.setItem('clinica_reduced_motion', reduced);
-    }
-
-    if (motionToggleBtn) {
-        motionToggleBtn.addEventListener('click', () => {
-            isReducedMotion = !isReducedMotion;
-            applyMotionState(isReducedMotion);
-        });
-    }
-
-    applyMotionState(isReducedMotion);
-
-    // 3. Revelado de Títulos Rápido y No Bloqueante
-    const revealElements = document.querySelectorAll('.title-reveal-inner, .scroll-fade-up');
-    
-    if ('IntersectionObserver' in window && !isReducedMotion) {
-        const observerOptions = {
-            root: null,
-            rootMargin: '0px 0px -40px 0px',
-            threshold: 0.1
-        };
-
-        const revealObserver = new IntersectionObserver((entries, observer) => {
-            entries.forEach(entry => {
-                if (entry.isIntersecting) {
-                    entry.target.style.transform = 'translateY(0)';
-                    entry.target.style.opacity = '1';
-                    observer.unobserve(entry.target);
-                }
-            });
-        }, observerOptions);
-
-        revealElements.forEach(el => {
-            el.style.transform = 'translateY(24px)';
-            el.style.opacity = '0';
-            el.style.transition = 'transform 0.5s ease-out, opacity 0.5s ease-out';
-            revealObserver.observe(el);
-        });
-    } else {
-        revealElements.forEach(el => {
-            el.style.transform = 'none';
-            el.style.opacity = '1';
-        });
-    }
-
-    // 4. Saltar Intro
-    const skipIntroBtn = document.getElementById('skip-intro-btn');
-    if (skipIntroBtn) {
-        skipIntroBtn.addEventListener('click', (e) => {
-            e.preventDefault();
-            const targetSection = document.getElementById('capitulo-01');
-            if (targetSection) {
-                targetSection.scrollIntoView({ behavior: 'smooth' });
-            }
-        });
-    }
-
-    // 5. Manejo de alertas cerrables
-    document.querySelectorAll('[data-dismiss="alert"]').forEach(btn => {
-        btn.addEventListener('click', () => {
-            const alert = btn.closest('[role="alert"], [role="status"]');
-            if (alert) alert.remove();
-        });
     });
+}
+
+document.querySelectorAll('[data-dismiss-alert]').forEach((button) => {
+    button.addEventListener('click', () => button.closest('[role="status"]')?.remove());
 });

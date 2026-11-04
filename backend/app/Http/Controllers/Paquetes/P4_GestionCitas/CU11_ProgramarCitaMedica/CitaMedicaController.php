@@ -3,79 +3,82 @@
 namespace App\Http\Controllers\Paquetes\P4_GestionCitas\CU11_ProgramarCitaMedica;
 
 use App\Http\Controllers\Controller;
+use App\Models\Paquetes\P3_GestionPacientes\Paciente;
+use App\Services\Paquetes\P1_SeguridadAdministracion\EspecialidadService;
+use App\Services\Paquetes\P2_PersonalMedico\MedicoService;
 use App\Services\Paquetes\P4_GestionCitas\CitaMedicaService;
-use App\Traits\ApiResponse;
-use Illuminate\Http\JsonResponse;
+use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
-use InvalidArgumentException;
-use Throwable;
+use Illuminate\View\View;
 
 class CitaMedicaController extends Controller
 {
-    use ApiResponse;
+    public function __construct(private CitaMedicaService $service) {}
 
-    protected CitaMedicaService $citaMedicaService;
-
-    public function __construct(CitaMedicaService $citaMedicaService)
+    public function index(Request $request, EspecialidadService $especialidades, MedicoService $medicos): View
     {
-        $this->citaMedicaService = $citaMedicaService;
+        $usuario = $request->user();
+        $recepcion = $usuario->can('recepcion');
+        $reserva = $usuario->can('reservar');
+        $esPaciente = $usuario->rol->nombre_rol === 'Paciente';
+        $filtros = $request->validate([
+            'paciente' => 'nullable|integer|min:1',
+            'medico' => 'nullable|integer|min:1',
+            'fecha' => 'nullable|date_format:Y-m-d',
+        ]);
+
+        $idPaciente = $esPaciente ? $usuario->id_paciente : ($recepcion ? ($filtros['paciente'] ?? null) : null);
+        $idMedico = $recepcion ? ($filtros['medico'] ?? null) : ($esPaciente ? null : $usuario->id_medico);
+
+        return view('Paquetes.P4_GestionCitas.CU11_ProgramarCitaMedica.index', [
+            'citas' => $this->service->listar($idPaciente, $idMedico, $filtros['fecha'] ?? null),
+            'pacientes' => $recepcion ? Paciente::where('estado', true)->orderBy('nombre_completo')->get(['id_paciente', 'nombre_completo', 'ci']) : [],
+            'especialidades' => $reserva ? $especialidades->listar(true) : [],
+            'medicos' => $reserva ? $medicos->listar(true) : [],
+            'filtros' => $filtros,
+        ]);
     }
 
-    /**
-     * Listado de citas médicas.
-     */
-    public function index(Request $request): JsonResponse
+    public function show(Request $request, string $codigo): View
     {
-        $idPaciente = $request->query('id_paciente');
-        $idMedico = $request->query('id_medico');
-        $fecha = $request->query('fecha');
+        $cita = $this->service->buscarPorCodigo($codigo);
+        $usuario = $request->user();
 
-        $citas = $this->citaMedicaService->listar(
-            $idPaciente ? (int) $idPaciente : null,
-            $idMedico ? (int) $idMedico : null,
-            $fecha
-        );
+        if (! $usuario->can('recepcion')) {
+            $propia = match ($usuario->rol->nombre_rol) {
+                'Paciente' => $cita->id_paciente === $usuario->id_paciente,
+                'Médico' => $cita->id_medico === $usuario->id_medico,
+                default => false,
+            };
 
-        return $this->success($citas, 'Listado de citas médicas obtenido.');
-    }
-
-    /**
-     * Consulta de cita por código único.
-     */
-    public function show(string $codigo): JsonResponse
-    {
-        try {
-            $cita = $this->citaMedicaService->buscarPorCodigo($codigo);
-            return $this->success($cita, 'Cita médica localizada.');
-        } catch (Throwable $e) {
-            return $this->error('Cita médica no encontrada.', 404);
+            abort_unless($propia, 404);
         }
+
+        return view('Paquetes.P4_GestionCitas.CU11_ProgramarCitaMedica.show', ['cita' => $cita]);
     }
 
-    /**
-     * CU11: Programación de cita médica con validación estricta de no superposición.
-     */
-    public function store(Request $request): JsonResponse
+    public function store(Request $request): RedirectResponse
     {
-        $validated = $request->validate([
-            'id_paciente' => 'required|integer|exists:pacientes,id_paciente',
-            'id_medico' => 'required|integer|exists:medicos,id_medico',
-            'id_especialidad' => 'required|integer|exists:especialidades,id_especialidad',
+        $usuario = $request->user();
+        if ($usuario->rol->nombre_rol === 'Paciente') {
+            $request->merge(['id_paciente' => $usuario->id_paciente]);
+        }
+
+        $datos = $request->validate([
+            'id_paciente' => 'bail|required|integer|exists:pacientes,id_paciente',
+            'id_medico' => 'bail|required|integer|exists:medicos,id_medico',
+            'id_especialidad' => 'bail|required|integer|exists:especialidades,id_especialidad',
             'fecha_cita' => 'required|date_format:Y-m-d',
-            'hora_cita' => 'required|string',
+            'hora_cita' => 'required|date_format:H:i',
             'duracion_minutos' => 'nullable|integer|min:5|max:180',
             'motivo' => 'nullable|string|max:500',
         ]);
 
-        try {
-            $operadorId = $request->input('operador_id') ?? auth()->id();
-            $cita = $this->citaMedicaService->programar($validated, $operadorId);
-            return $this->success($cita, 'Cita médica programada exitosamente con estado inicial Programada.', 201);
-        } catch (InvalidArgumentException $e) {
-            return $this->error($e->getMessage(), 422);
-        } catch (Throwable $e) {
-            return $this->error('Error al programar la cita: ' . $e->getMessage(), 500);
-        }
+        return $this->procesarFormulario(function () use ($usuario, $datos) {
+            $cita = $this->service->programar($datos, $usuario->getKey());
+
+            return redirect()->route('citas.show', $cita->codigo_unico)
+                ->with('status', 'Cita médica programada.');
+        });
     }
 }
-

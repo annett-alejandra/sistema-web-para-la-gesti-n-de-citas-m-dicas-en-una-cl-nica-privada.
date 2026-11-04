@@ -4,40 +4,60 @@ namespace App\Http\Controllers\Paquetes\P3_GestionPacientes\CU07_GestionarPacien
 
 use App\Http\Controllers\Controller;
 use App\Services\Paquetes\P3_GestionPacientes\PacienteService;
-use App\Traits\ApiResponse;
-use Illuminate\Http\JsonResponse;
+use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
-use InvalidArgumentException;
-use Throwable;
+use Illuminate\View\View;
 
 class PacientesController extends Controller
 {
-    use ApiResponse;
+    public function __construct(private PacienteService $service) {}
 
-    protected PacienteService $pacienteService;
-
-    public function __construct(PacienteService $pacienteService)
+    public function index(Request $request): View
     {
-        $this->pacienteService = $pacienteService;
+        $filtros = $request->validate(['q' => 'nullable|string|max:255']);
+        $pacientes = $this->service->listar($filtros['q'] ?? null, $request->boolean('solo_activos'));
+        $idEditar = $request->integer('editar');
+
+        return view('Paquetes.P3_GestionPacientes.CU07_GestionarPacientes.index', [
+            'pacientes' => $pacientes,
+            'edicion' => $idEditar > 0 ? $pacientes->findOrFail($idEditar) : null,
+        ]);
     }
 
-    /**
-     * Listado y búsqueda de pacientes.
-     */
-    public function index(Request $request): JsonResponse
+    public function store(Request $request): RedirectResponse
     {
-        $termino = $request->query('q');
-        $soloActivos = $request->boolean('solo_activos', false);
-        $pacientes = $this->pacienteService->listar($termino, $soloActivos);
-        return $this->success($pacientes, 'Pacientes obtenidos con éxito.');
+        $datos = $request->validate($this->reglas());
+
+        return $this->procesarFormulario(function () use ($request, $datos) {
+            $this->service->crear($datos, $request->user()->getKey());
+
+            return redirect()->route('pacientes.index')->with('status', 'Ficha de paciente registrada.');
+        });
     }
 
-    /**
-     * Registro de nuevo paciente desde recepción.
-     */
-    public function store(Request $request): JsonResponse
+    public function update(Request $request, int $id): RedirectResponse
     {
-        $validated = $request->validate([
+        $datos = $request->validate($this->reglas());
+
+        return $this->procesarFormulario(function () use ($request, $id, $datos) {
+            $this->service->actualizar($id, $datos, $request->user()->getKey());
+
+            return redirect()->route('pacientes.index')->with('status', 'Ficha de paciente actualizada.');
+        });
+    }
+
+    public function toggleEstado(Request $request, int $id): RedirectResponse
+    {
+        return $this->procesarFormulario(function () use ($request, $id) {
+            $this->service->toggleEstado($id, $request->user()->getKey());
+
+            return redirect()->route('pacientes.index')->with('status', 'Estado actualizado.');
+        });
+    }
+
+    private function reglas(): array
+    {
+        return [
             'ci' => 'required|string|max:50',
             'nombre_completo' => 'required|string|max:255',
             'fecha_nacimiento' => 'required|date',
@@ -50,64 +70,7 @@ class PacientesController extends Controller
             'tipo_paciente' => 'nullable|string|max:100',
             'alergias' => 'nullable|string',
             'informacion_medica_basica' => 'nullable|string',
-            'estado' => 'nullable|boolean',
-        ]);
-
-        try {
-            $operadorId = $request->input('operador_id') ?? auth()->id();
-            $paciente = $this->pacienteService->crear($validated, $operadorId);
-            return $this->success($paciente, 'Paciente registrado con éxito.', 201);
-        } catch (InvalidArgumentException $e) {
-            return $this->error($e->getMessage(), 422);
-        } catch (Throwable $e) {
-            return $this->error('Error al registrar el paciente: ' . $e->getMessage(), 500);
-        }
-    }
-
-    /**
-     * Actualización de datos del paciente.
-     */
-    public function update(Request $request, int $id): JsonResponse
-    {
-        $validated = $request->validate([
-            'ci' => 'sometimes|string|max:50',
-            'nombre_completo' => 'sometimes|string|max:255',
-            'fecha_nacimiento' => 'sometimes|date',
-            'genero' => 'sometimes|string|max:50',
-            'correo' => 'nullable|email|max:255',
-            'telefono' => 'nullable|string|max:50',
-            'direccion_domicilio' => 'nullable|string|max:255',
-            'contacto_emergencia' => 'nullable|string|max:255',
-            'telefono_emergencia' => 'nullable|string|max:50',
-            'tipo_paciente' => 'nullable|string|max:100',
-            'alergias' => 'nullable|string',
-            'informacion_medica_basica' => 'nullable|string',
             'estado' => 'sometimes|boolean',
-        ]);
-
-        try {
-            $operadorId = $request->input('operador_id') ?? auth()->id();
-            $paciente = $this->pacienteService->actualizar($id, $validated, $operadorId);
-            return $this->success($paciente, 'Paciente actualizado con éxito.');
-        } catch (InvalidArgumentException $e) {
-            return $this->error($e->getMessage(), 422);
-        } catch (Throwable $e) {
-            return $this->error('Error al actualizar paciente: ' . $e->getMessage(), 500);
-        }
-    }
-
-    /**
-     * Desactivación o reactivación lógica.
-     */
-    public function toggleEstado(Request $request, int $id): JsonResponse
-    {
-        try {
-            $operadorId = $request->input('operador_id') ?? auth()->id();
-            $paciente = $this->pacienteService->toggleEstado($id, $operadorId);
-            return $this->success($paciente, 'Estado del paciente modificado con éxito.');
-        } catch (Throwable $e) {
-            return $this->error('Error al modificar estado: ' . $e->getMessage(), 500);
-        }
+        ];
     }
 }
-

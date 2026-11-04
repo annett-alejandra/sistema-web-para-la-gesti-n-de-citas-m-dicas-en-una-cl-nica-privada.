@@ -3,104 +3,75 @@
 namespace App\Http\Controllers\Paquetes\P1_SeguridadAdministracion\CU03_GestionarUsuariosRoles;
 
 use App\Http\Controllers\Controller;
+use App\Models\Paquetes\P2_PersonalMedico\Medico;
+use App\Models\Paquetes\P3_GestionPacientes\Paciente;
 use App\Services\Paquetes\P1_SeguridadAdministracion\UsuarioService;
-use App\Traits\ApiResponse;
-use Illuminate\Http\JsonResponse;
+use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
-use InvalidArgumentException;
-use Throwable;
+use Illuminate\View\View;
 
 class UsuariosController extends Controller
 {
-    use ApiResponse;
+    public function __construct(private UsuarioService $service) {}
 
-    protected UsuarioService $usuarioService;
-
-    public function __construct(UsuarioService $usuarioService)
+    public function index(Request $request): View
     {
-        $this->usuarioService = $usuarioService;
+        $usuarios = $this->service->listar();
+        $idEditar = $request->integer('editar');
+
+        return view('Paquetes.P1_SeguridadAdministracion.CU03_GestionarUsuariosRoles.index', [
+            'usuarios' => $usuarios,
+            'edicion' => $idEditar > 0 ? $usuarios->findOrFail($idEditar) : null,
+            'roles' => $this->service->listarRoles(),
+            'pacientes' => Paciente::orderBy('nombre_completo')->get(['id_paciente', 'nombre_completo', 'ci']),
+            'medicos' => Medico::orderBy('nombre_completo')->get(['id_medico', 'nombre_completo']),
+        ]);
     }
 
-    /**
-     * Listado de usuarios.
-     */
-    public function index(): JsonResponse
+    public function store(Request $request): RedirectResponse
     {
-        $usuarios = $this->usuarioService->listar();
-        return $this->success($usuarios, 'Listado de usuarios obtenido correctamente.');
+        $datos = $request->validate($this->reglas(false));
+
+        return $this->procesarFormulario(function () use ($request, $datos) {
+            $this->service->crear($datos, $request->user()->getKey());
+
+            return redirect()->route('usuarios.index')->with('status', 'Usuario creado.');
+        });
     }
 
-    /**
-     * Catálogo de roles para asignación.
-     */
-    public function roles(): JsonResponse
+    public function update(Request $request, int $id): RedirectResponse
     {
-        $roles = $this->usuarioService->listarRoles();
-        return $this->success($roles, 'Catálogo de roles obtenido correctamente.');
+        $datos = $request->validate($this->reglas(true));
+
+        return $this->procesarFormulario(function () use ($request, $id, $datos) {
+            $this->service->actualizar($id, $datos, $request->user()->getKey());
+
+            return redirect()->route('usuarios.index')->with('status', 'Usuario actualizado.');
+        });
     }
 
-    /**
-     * Registro de nuevo usuario.
-     */
-    public function store(Request $request): JsonResponse
+    public function toggleEstado(Request $request, int $id): RedirectResponse
     {
-        $validated = $request->validate([
+        return $this->procesarFormulario(function () use ($request, $id) {
+            $this->service->toggleEstado($id, $request->user()->getKey());
+
+            return redirect()->route('usuarios.index')->with('status', 'Estado actualizado.');
+        });
+    }
+
+    private function reglas(bool $edicion): array
+    {
+        $reglas = [
             'nombre_usuario' => 'required|string|max:100',
             'correo' => 'required|email|max:255',
-            'password' => 'required|string|min:6',
+            'password' => $edicion ? 'nullable|string|min:6|max:72' : 'required|string|min:6|max:72',
             'id_rol' => 'required|integer|exists:roles,id_rol',
-            'id_paciente' => 'nullable|integer|exists:pacientes,id_paciente',
-            'id_medico' => 'nullable|integer|exists:medicos,id_medico',
-            'estado' => 'nullable|boolean',
-        ]);
-
-        try {
-            $operadorId = $request->input('operador_id') ?? auth()->id();
-            $usuario = $this->usuarioService->crear($validated, $operadorId);
-            return $this->success($usuario, 'Usuario creado con éxito.', 201);
-        } catch (InvalidArgumentException $e) {
-            return $this->error($e->getMessage(), 422);
-        } catch (Throwable $e) {
-            return $this->error('Error al registrar el usuario: ' . $e->getMessage(), 500);
-        }
-    }
-
-    /**
-     * Actualización de usuario.
-     */
-    public function update(Request $request, int $id): JsonResponse
-    {
-        $validated = $request->validate([
-            'nombre_usuario' => 'sometimes|string|max:100',
-            'correo' => 'sometimes|email|max:255',
-            'password' => 'nullable|string|min:6',
-            'id_rol' => 'sometimes|integer|exists:roles,id_rol',
             'estado' => 'sometimes|boolean',
-        ]);
+        ];
 
-        try {
-            $operadorId = $request->input('operador_id') ?? auth()->id();
-            $usuario = $this->usuarioService->actualizar($id, $validated, $operadorId);
-            return $this->success($usuario, 'Usuario actualizado con éxito.');
-        } catch (InvalidArgumentException $e) {
-            return $this->error($e->getMessage(), 422);
-        } catch (Throwable $e) {
-            return $this->error('Error al actualizar el usuario: ' . $e->getMessage(), 500);
-        }
-    }
-
-    /**
-     * Alternar estado (activar / desactivar).
-     */
-    public function toggleEstado(Request $request, int $id): JsonResponse
-    {
-        try {
-            $operadorId = $request->input('operador_id') ?? auth()->id();
-            $usuario = $this->usuarioService->toggleEstado($id, $operadorId);
-            return $this->success($usuario, 'Estado de usuario modificado con éxito.');
-        } catch (Throwable $e) {
-            return $this->error('Error al modificar estado: ' . $e->getMessage(), 500);
-        }
+        return $edicion ? $reglas : $reglas + [
+            'id_paciente' => 'nullable|integer|exists:pacientes,id_paciente|prohibits:id_medico',
+            'id_medico' => 'nullable|integer|exists:medicos,id_medico',
+        ];
     }
 }
-

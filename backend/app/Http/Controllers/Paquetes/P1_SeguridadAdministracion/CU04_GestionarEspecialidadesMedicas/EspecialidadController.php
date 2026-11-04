@@ -4,89 +4,62 @@ namespace App\Http\Controllers\Paquetes\P1_SeguridadAdministracion\CU04_Gestiona
 
 use App\Http\Controllers\Controller;
 use App\Services\Paquetes\P1_SeguridadAdministracion\EspecialidadService;
-use App\Traits\ApiResponse;
-use Illuminate\Http\JsonResponse;
+use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
-use InvalidArgumentException;
-use Throwable;
+use Illuminate\View\View;
 
 class EspecialidadController extends Controller
 {
-    use ApiResponse;
+    public function __construct(private EspecialidadService $service) {}
 
-    protected EspecialidadService $especialidadService;
-
-    public function __construct(EspecialidadService $especialidadService)
+    public function index(Request $request): View
     {
-        $this->especialidadService = $especialidadService;
+        $especialidades = $this->service->listar($request->boolean('solo_activas'));
+        $idEditar = $request->integer('editar');
+
+        return view('Paquetes.P1_SeguridadAdministracion.CU04_GestionarEspecialidadesMedicas.index', [
+            'especialidades' => $especialidades,
+            'edicion' => $idEditar > 0 ? $especialidades->findOrFail($idEditar) : null,
+        ]);
     }
 
-    /**
-     * Listado de especialidades médicas.
-     */
-    public function index(Request $request): JsonResponse
+    public function store(Request $request): RedirectResponse
     {
-        $soloActivas = $request->boolean('solo_activas', false);
-        $especialidades = $this->especialidadService->listar($soloActivas);
-        return $this->success($especialidades, 'Especialidades obtenidas con éxito.');
+        $datos = $request->validate($this->reglas());
+
+        return $this->procesarFormulario(function () use ($request, $datos) {
+            $this->service->crear($datos, $request->user()->getKey());
+
+            return redirect()->route('especialidades.index')->with('status', 'Especialidad registrada.');
+        });
     }
 
-    /**
-     * Registro de especialidad médica.
-     */
-    public function store(Request $request): JsonResponse
+    public function update(Request $request, int $id): RedirectResponse
     {
-        $validated = $request->validate([
+        $datos = $request->validate($this->reglas());
+
+        return $this->procesarFormulario(function () use ($request, $id, $datos) {
+            $this->service->actualizar($id, $datos, $request->user()->getKey());
+
+            return redirect()->route('especialidades.index')->with('status', 'Especialidad actualizada.');
+        });
+    }
+
+    public function toggleEstado(Request $request, int $id): RedirectResponse
+    {
+        return $this->procesarFormulario(function () use ($request, $id) {
+            $this->service->toggleEstado($id, $request->user()->getKey());
+
+            return redirect()->route('especialidades.index')->with('status', 'Estado actualizado.');
+        });
+    }
+
+    private function reglas(): array
+    {
+        return [
             'nombre_especialidad' => 'required|string|max:150',
             'descripcion' => 'nullable|string',
-            'estado' => 'nullable|boolean',
-        ]);
-
-        try {
-            $operadorId = $request->input('operador_id') ?? auth()->id();
-            $especialidad = $this->especialidadService->crear($validated, $operadorId);
-            return $this->success($especialidad, 'Especialidad médica registrada con éxito.', 201);
-        } catch (InvalidArgumentException $e) {
-            return $this->error($e->getMessage(), 422);
-        } catch (Throwable $e) {
-            return $this->error('Error al registrar la especialidad: ' . $e->getMessage(), 500);
-        }
-    }
-
-    /**
-     * Actualización de especialidad médica.
-     */
-    public function update(Request $request, int $id): JsonResponse
-    {
-        $validated = $request->validate([
-            'nombre_especialidad' => 'sometimes|string|max:150',
-            'descripcion' => 'nullable|string',
             'estado' => 'sometimes|boolean',
-        ]);
-
-        try {
-            $operadorId = $request->input('operador_id') ?? auth()->id();
-            $especialidad = $this->especialidadService->actualizar($id, $validated, $operadorId);
-            return $this->success($especialidad, 'Especialidad actualizada con éxito.');
-        } catch (InvalidArgumentException $e) {
-            return $this->error($e->getMessage(), 422);
-        } catch (Throwable $e) {
-            return $this->error('Error al actualizar la especialidad: ' . $e->getMessage(), 500);
-        }
-    }
-
-    /**
-     * Alternar estado (activar / desactivar).
-     */
-    public function toggleEstado(Request $request, int $id): JsonResponse
-    {
-        try {
-            $operadorId = $request->input('operador_id') ?? auth()->id();
-            $especialidad = $this->especialidadService->toggleEstado($id, $operadorId);
-            return $this->success($especialidad, 'Estado de la especialidad modificado con éxito.');
-        } catch (Throwable $e) {
-            return $this->error('Error al modificar estado: ' . $e->getMessage(), 500);
-        }
+        ];
     }
 }
-

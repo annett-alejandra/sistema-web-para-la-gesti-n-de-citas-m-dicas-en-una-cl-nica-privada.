@@ -3,98 +3,73 @@
 namespace App\Http\Controllers\Paquetes\P2_PersonalMedico\CU05_GestionarMedicos;
 
 use App\Http\Controllers\Controller;
+use App\Services\Paquetes\P1_SeguridadAdministracion\EspecialidadService;
 use App\Services\Paquetes\P2_PersonalMedico\MedicoService;
-use App\Traits\ApiResponse;
-use Illuminate\Http\JsonResponse;
+use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
-use InvalidArgumentException;
-use Throwable;
+use Illuminate\View\View;
 
 class MedicosController extends Controller
 {
-    use ApiResponse;
+    public function __construct(private MedicoService $service) {}
 
-    protected MedicoService $medicoService;
-
-    public function __construct(MedicoService $medicoService)
+    public function index(Request $request, EspecialidadService $especialidadService): View
     {
-        $this->medicoService = $medicoService;
+        $medicos = $this->service->listar($request->boolean('solo_activos'));
+        $idEditar = $request->integer('editar');
+
+        return view('Paquetes.P2_PersonalMedico.CU05_GestionarMedicos.index', [
+            'medicos' => $medicos,
+            'edicion' => $idEditar > 0 ? $medicos->findOrFail($idEditar) : null,
+            'especialidades' => $especialidadService->listar(),
+        ]);
     }
 
-    /**
-     * Listado de médicos.
-     */
-    public function index(Request $request): JsonResponse
+    public function store(Request $request): RedirectResponse
     {
-        $soloActivos = $request->boolean('solo_activos', false);
-        $medicos = $this->medicoService->listar($soloActivos);
-        return $this->success($medicos, 'Médicos obtenidos con éxito.');
+        $datos = $request->validate($this->reglas());
+        // Al desmarcar todas las casillas, el navegador omite el campo.
+        $datos['especialidades'] = $datos['especialidades'] ?? [];
+
+        return $this->procesarFormulario(function () use ($request, $datos) {
+            $this->service->crear($datos, $request->user()->getKey());
+
+            return redirect()->route('medicos.index')->with('status', 'Médico registrado.');
+        });
     }
 
-    /**
-     * Registro de nuevo médico con especialidades.
-     */
-    public function store(Request $request): JsonResponse
+    public function update(Request $request, int $id): RedirectResponse
     {
-        $validated = $request->validate([
+        $datos = $request->validate($this->reglas());
+        // Al desmarcar todas las casillas, el navegador omite el campo.
+        $datos['especialidades'] = $datos['especialidades'] ?? [];
+
+        return $this->procesarFormulario(function () use ($request, $id, $datos) {
+            $this->service->actualizar($id, $datos, $request->user()->getKey());
+
+            return redirect()->route('medicos.index')->with('status', 'Médico actualizado.');
+        });
+    }
+
+    public function toggleEstado(Request $request, int $id): RedirectResponse
+    {
+        return $this->procesarFormulario(function () use ($request, $id) {
+            $this->service->toggleEstado($id, $request->user()->getKey());
+
+            return redirect()->route('medicos.index')->with('status', 'Estado actualizado.');
+        });
+    }
+
+    private function reglas(): array
+    {
+        return [
             'nombre_completo' => 'required|string|max:255',
             'registro_profesional' => 'required|string|max:100',
             'correo' => 'nullable|email|max:255',
             'telefono' => 'nullable|string|max:50',
             'especialidades' => 'nullable|array',
             'especialidades.*' => 'integer|exists:especialidades,id_especialidad',
-            'estado' => 'nullable|boolean',
-        ]);
-
-        try {
-            $operadorId = $request->input('operador_id') ?? auth()->id();
-            $medico = $this->medicoService->crear($validated, $operadorId);
-            return $this->success($medico, 'Médico registrado exitosamente.', 201);
-        } catch (InvalidArgumentException $e) {
-            return $this->error($e->getMessage(), 422);
-        } catch (Throwable $e) {
-            return $this->error('Error al registrar al médico: ' . $e->getMessage(), 500);
-        }
-    }
-
-    /**
-     * Actualización de médico.
-     */
-    public function update(Request $request, int $id): JsonResponse
-    {
-        $validated = $request->validate([
-            'nombre_completo' => 'sometimes|string|max:255',
-            'registro_profesional' => 'sometimes|string|max:100',
-            'correo' => 'nullable|email|max:255',
-            'telefono' => 'nullable|string|max:50',
-            'especialidades' => 'nullable|array',
-            'especialidades.*' => 'integer|exists:especialidades,id_especialidad',
             'estado' => 'sometimes|boolean',
-        ]);
-
-        try {
-            $operadorId = $request->input('operador_id') ?? auth()->id();
-            $medico = $this->medicoService->actualizar($id, $validated, $operadorId);
-            return $this->success($medico, 'Médico actualizado exitosamente.');
-        } catch (InvalidArgumentException $e) {
-            return $this->error($e->getMessage(), 422);
-        } catch (Throwable $e) {
-            return $this->error('Error al actualizar médico: ' . $e->getMessage(), 500);
-        }
-    }
-
-    /**
-     * Alternar estado activo/inactivo.
-     */
-    public function toggleEstado(Request $request, int $id): JsonResponse
-    {
-        try {
-            $operadorId = $request->input('operador_id') ?? auth()->id();
-            $medico = $this->medicoService->toggleEstado($id, $operadorId);
-            return $this->success($medico, 'Estado del médico actualizado.');
-        } catch (Throwable $e) {
-            return $this->error('Error al modificar estado: ' . $e->getMessage(), 500);
-        }
+        ];
     }
 }
-
